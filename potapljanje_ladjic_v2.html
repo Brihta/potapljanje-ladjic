@@ -1,0 +1,864 @@
+<!DOCTYPE html>
+<html lang="sl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>🚢 Potapljanje ladjic</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Black+Han+Sans&family=Nunito:wght@600;700;800;900&display=swap');
+
+:root {
+  --sea:        #0a1628;
+  --panel:      #0d2240;
+  --border:     #1c4a7a;
+  --wave:       #1a5fa8;
+  --cell:       #0d2f58;
+  --cell-h:     #1a4a80;
+  --miss:       #1a6abf;
+  --hit-bg:     linear-gradient(135deg,#8b1a1a,#c0392b);
+  --sunk-bg:    linear-gradient(135deg,#5a1010,#7a1a1a);
+  --gold:       #ffd54f;
+  --white:      #e8f4fd;
+  --muted:      #4a7fa8;
+  --blue-team:  #3a9de8;
+  --pink-team:  #e84393;
+}
+
+*{box-sizing:border-box;margin:0;padding:0;}
+
+body{
+  font-family:'Nunito',sans-serif;
+  background:var(--sea);
+  color:var(--white);
+  min-height:100vh;
+  overflow-x:hidden;
+}
+
+body::before{
+  content:'';position:fixed;inset:0;pointer-events:none;z-index:0;
+  background:
+    radial-gradient(ellipse at 20% 50%,rgba(26,95,168,.15) 0%,transparent 60%),
+    radial-gradient(ellipse at 80% 20%,rgba(14,58,110,.2) 0%,transparent 50%);
+}
+
+/* ══════════════════════════════
+   MODE SELECT SCREEN
+══════════════════════════════ */
+#modeScreen{
+  position:fixed;inset:0;z-index:200;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;
+  gap:32px;background:var(--sea);
+  padding:24px;
+}
+
+#modeScreen h1{
+  font-family:'Black Han Sans',sans-serif;
+  font-size:clamp(2rem,5vw,3.4rem);
+  color:var(--gold);
+  text-shadow:0 0 30px rgba(255,213,79,.4);
+  letter-spacing:2px;text-align:center;
+}
+#modeScreen p{color:var(--muted);font-weight:700;font-size:1rem;text-align:center;}
+
+.mode-cards{display:flex;gap:24px;flex-wrap:wrap;justify-content:center;}
+
+.mode-card{
+  background:rgba(13,34,64,.9);
+  border:2px solid var(--border);
+  border-radius:20px;
+  padding:36px 40px;
+  cursor:pointer;
+  transition:all .25s;
+  text-align:center;
+  min-width:200px;
+  max-width:260px;
+}
+.mode-card:hover{
+  border-color:var(--gold);
+  transform:translateY(-6px);
+  box-shadow:0 12px 40px rgba(255,213,79,.2);
+}
+.mode-card .icon{font-size:3.5rem;margin-bottom:12px;}
+.mode-card h2{
+  font-family:'Black Han Sans',sans-serif;
+  font-size:1.4rem;color:var(--gold);margin-bottom:8px;
+}
+.mode-card p{font-size:.85rem;color:var(--muted);font-weight:700;line-height:1.5;}
+
+/* ══════════════════════════════
+   TEAM NAME MODAL
+══════════════════════════════ */
+#teamModal{
+  display:none;position:fixed;inset:0;z-index:300;
+  background:rgba(10,22,40,.92);
+  align-items:center;justify-content:center;
+  backdrop-filter:blur(6px);
+}
+#teamModal.show{display:flex;}
+
+.modal-box{
+  background:var(--panel);
+  border:2px solid var(--border);
+  border-radius:20px;
+  padding:36px 40px;
+  min-width:320px;max-width:500px;width:90%;
+  text-align:center;
+}
+.modal-box h2{
+  font-family:'Black Han Sans',sans-serif;
+  color:var(--gold);font-size:1.6rem;margin-bottom:24px;
+}
+.team-inputs{display:flex;flex-direction:column;gap:16px;margin-bottom:24px;}
+
+.team-input-row{display:flex;align-items:center;gap:12px;}
+.team-input-row label{font-weight:800;font-size:.9rem;white-space:nowrap;min-width:28px;}
+.team-input-row input{
+  flex:1;
+  background:var(--cell);
+  border:2px solid var(--border);
+  border-radius:10px;
+  color:var(--white);
+  font-family:'Nunito',sans-serif;
+  font-size:1rem;
+  font-weight:800;
+  padding:10px 16px;
+  outline:none;
+  transition:border-color .2s;
+}
+.team-input-row input:focus{border-color:var(--gold);}
+.label-blue{color:var(--blue-team);}
+.label-pink{color:var(--pink-team);}
+
+.btn-start-teams{
+  width:100%;padding:14px;
+  background:linear-gradient(135deg,var(--wave),#1a4a80);
+  border:none;border-radius:50px;
+  color:var(--white);font-family:'Nunito',sans-serif;font-weight:900;font-size:1rem;
+  letter-spacing:.5px;cursor:pointer;text-transform:uppercase;
+  transition:all .2s;
+}
+.btn-start-teams:hover{transform:translateY(-2px);box-shadow:0 8px 20px rgba(26,95,168,.4);}
+
+/* ══════════════════════════════
+   GAME SCREEN
+══════════════════════════════ */
+#gameScreen{display:none;flex-direction:column;align-items:center;gap:18px;padding:20px 12px 40px;position:relative;z-index:1;}
+#gameScreen.show{display:flex;}
+
+/* top bar */
+.top-bar{display:flex;align-items:center;justify-content:space-between;width:100%;max-width:1400px;gap:12px;flex-wrap:wrap;}
+
+.game-title{
+  font-family:'Black Han Sans',sans-serif;
+  font-size:clamp(1.4rem,3vw,2.2rem);
+  color:var(--gold);
+  text-shadow:0 0 20px rgba(255,213,79,.3);
+  letter-spacing:2px;
+  white-space:nowrap;
+}
+
+.btn{
+  font-family:'Nunito',sans-serif;font-weight:900;font-size:.85rem;
+  letter-spacing:.5px;padding:10px 20px;border:none;border-radius:50px;
+  cursor:pointer;transition:all .2s;text-transform:uppercase;
+}
+.btn:hover{transform:translateY(-2px);}
+.btn-menu{
+  background:rgba(13,34,64,.8);border:1.5px solid var(--border);
+  color:var(--muted);
+}
+.btn-menu:hover{border-color:var(--gold);color:var(--gold);}
+
+/* ── BOARDS AREA ── */
+.boards-area{
+  display:flex;gap:32px;flex-wrap:wrap;justify-content:center;align-items:flex-start;
+  width:100%;max-width:1400px;
+}
+
+/* solo: one centered board */
+.boards-area.solo{justify-content:center;}
+
+/* ── BOARD PANEL ── */
+.board-panel{
+  display:flex;flex-direction:column;align-items:center;gap:12px;
+  flex:1;min-width:min(340px,95vw);
+}
+
+.team-header{
+  width:100%;
+  background:rgba(13,34,64,.8);
+  border:2px solid var(--border);
+  border-radius:14px;
+  padding:12px 20px;
+  display:flex;align-items:center;justify-content:space-between;
+  gap:12px;flex-wrap:wrap;
+}
+
+.team-name-label{
+  font-family:'Black Han Sans',sans-serif;
+  font-size:1.3rem;letter-spacing:1px;
+}
+
+.team-stats{display:flex;gap:10px;flex-wrap:wrap;}
+.stat-chip{
+  background:rgba(10,22,40,.6);border:1.5px solid var(--border);
+  border-radius:50px;padding:5px 14px;font-size:.8rem;font-weight:800;
+  display:flex;align-items:center;gap:6px;
+}
+.stat-chip span{color:var(--gold);}
+
+.ship-badges{display:flex;gap:8px;flex-wrap:wrap;justify-content:center;}
+.ship-badge{
+  background:rgba(13,34,64,.8);border:1.5px solid var(--border);
+  border-radius:8px;padding:4px 12px;font-size:.75rem;font-weight:800;color:var(--muted);
+  transition:all .3s;
+}
+.ship-badge.sunk{
+  background:rgba(255,77,77,.12);border-color:#ff4d4d;
+  color:#ff4d4d;text-decoration:line-through;
+}
+
+/* grid */
+.grid-wrapper{
+  background:rgba(10,22,40,.7);border:2px solid var(--border);
+  border-radius:14px;padding:12px;
+  box-shadow:0 0 40px rgba(26,95,168,.12),0 12px 40px rgba(0,0,0,.4);
+}
+
+.grid-outer{
+  display:inline-grid;
+  grid-template-columns:32px repeat(10,1fr);
+  grid-template-rows:32px repeat(10,1fr);
+  gap:2px;
+}
+
+.label-corner{}
+.col-label,.row-label{display:flex;align-items:center;justify-content:center;font-family:'Black Han Sans',sans-serif;font-size:.8rem;}
+.col-label{color:var(--gold);}
+.row-label{color:var(--wave);}
+
+.cell{
+  width:clamp(32px,4.5vw,52px);
+  height:clamp(32px,4.5vw,52px);
+  background:var(--cell);
+  border:1.5px solid var(--border);
+  border-radius:4px;
+  cursor:pointer;
+  display:flex;align-items:center;justify-content:center;
+  font-size:1.2rem;
+  transition:background .15s,transform .1s,box-shadow .15s;
+  position:relative;overflow:hidden;
+}
+.cell::before{
+  content:'';position:absolute;inset:0;
+  background:linear-gradient(135deg,rgba(255,255,255,.04) 0%,transparent 60%);
+  pointer-events:none;
+}
+.cell:hover:not(.revealed){
+  background:var(--cell-h);transform:scale(1.08);
+  box-shadow:0 0 12px rgba(58,157,232,.3);z-index:2;border-color:#3a9de8;
+}
+.cell.miss{background:var(--miss);cursor:default;box-shadow:inset 0 2px 6px rgba(0,0,0,.4);}
+.cell.miss::after{content:'〰';font-size:.9rem;color:rgba(255,255,255,.2);}
+
+.cell.hit{
+  background:var(--hit-bg);cursor:default;
+  box-shadow:0 0 16px rgba(255,77,77,.45);
+  animation:hitFlash .4s ease-out;
+}
+@keyframes hitFlash{
+  0%{background:#ff9999;transform:scale(1.15);}
+  100%{background:linear-gradient(135deg,#8b1a1a,#c0392b);transform:scale(1);}
+}
+.cell.sunk-cell{
+  background:var(--sunk-bg);
+  box-shadow:0 0 20px rgba(255,50,50,.5);
+}
+.hit-icon{font-size:1.2rem;filter:drop-shadow(0 0 5px rgba(255,100,100,.7));animation:iconPop .3s ease-out;}
+@keyframes iconPop{
+  0%{transform:scale(0) rotate(-20deg);}
+  70%{transform:scale(1.2) rotate(5deg);}
+  100%{transform:scale(1) rotate(0);}
+}
+
+/* bottom btns */
+.board-controls{display:flex;gap:10px;flex-wrap:wrap;justify-content:center;}
+
+.btn-reveal-all{
+  background:linear-gradient(135deg,#7a5c2e,#c8a96e);
+  color:#1a0e00;box-shadow:0 4px 12px rgba(200,169,110,.25);
+}
+.btn-new{
+  background:linear-gradient(135deg,#1a5fa8,#0d2f58);
+  color:var(--white);border:1.5px solid var(--wave);
+  box-shadow:0 4px 12px rgba(26,95,168,.25);
+}
+
+/* ── TEAM COLOR ACCENTS ── */
+.board-panel.team-a .team-header{border-color:var(--blue-team);}
+.board-panel.team-a .team-name-label{color:var(--blue-team);}
+.board-panel.team-b .team-header{border-color:var(--pink-team);}
+.board-panel.team-b .team-name-label{color:var(--pink-team);}
+
+/* ── DIVIDER ── */
+.vs-divider{
+  display:flex;flex-direction:column;align-items:center;justify-content:center;
+  font-family:'Black Han Sans',sans-serif;font-size:2rem;color:var(--gold);
+  gap:6px;padding:8px 0;
+  text-shadow:0 0 20px rgba(255,213,79,.4);
+}
+.vs-line{width:2px;height:40px;background:linear-gradient(to bottom,transparent,var(--border),transparent);}
+
+/* ── TOAST ── */
+#toast{
+  position:fixed;top:24px;left:50%;
+  transform:translateX(-50%) translateY(-80px);
+  background:rgba(10,22,40,.97);
+  border:2px solid var(--gold);
+  border-radius:12px;padding:12px 26px;
+  font-size:1rem;font-weight:800;color:var(--gold);
+  z-index:400;transition:transform .35s cubic-bezier(.34,1.56,.64,1);
+  box-shadow:0 8px 30px rgba(0,0,0,.5);text-align:center;min-width:200px;
+}
+#toast.show{transform:translateX(-50%) translateY(0);}
+
+/* ── WIN OVERLAY ── */
+#winOverlay{
+  display:none;position:fixed;inset:0;z-index:350;
+  flex-direction:column;align-items:center;justify-content:center;gap:16px;
+  background:rgba(10,22,40,.93);backdrop-filter:blur(8px);
+}
+#winOverlay.show{display:flex;}
+.win-emoji{font-size:5rem;animation:bounce .6s ease infinite alternate;}
+@keyframes bounce{from{transform:translateY(0);}to{transform:translateY(-14px);}}
+.win-title{font-family:'Black Han Sans',sans-serif;font-size:3rem;color:var(--gold);text-shadow:0 0 40px rgba(255,213,79,.6);}
+.win-sub{font-size:1.1rem;color:var(--muted);font-weight:700;text-align:center;}
+
+/* scrollbar */
+::-webkit-scrollbar{width:6px;}
+::-webkit-scrollbar-track{background:var(--sea);}
+::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px;}
+</style>
+</head>
+<body>
+
+<!-- ═══════════════════ MODE SELECT ═══════════════════ -->
+<div id="modeScreen">
+  <h1>🚢 POTAPLJANJE LADJIC</h1>
+  <p>Izberi način igre</p>
+  <div class="mode-cards">
+    <div class="mode-card" onclick="startSolo()">
+      <div class="icon">🎯</div>
+      <h2>Solo igra</h2>
+      <p>En razred skupaj ugiba koordinate na eni mreži</p>
+    </div>
+    <div class="mode-card" onclick="openTeamModal()">
+      <div class="icon">⚔️</div>
+      <h2>Ekipna igra</h2>
+      <p>Dve ekipi — dve mreži — kdo bo prvi potopil vse ladjice?</p>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════ TEAM NAME MODAL ═══════════════════ -->
+<div id="teamModal">
+  <div class="modal-box">
+    <h2>⚔️ Poimenuj ekipi</h2>
+    <div class="team-inputs">
+      <div class="team-input-row">
+        <label class="label-blue">🔵</label>
+        <input id="nameA" type="text" maxlength="20" placeholder="npr. Fantje" value="Fantje">
+      </div>
+      <div class="team-input-row">
+        <label class="label-pink">🩷</label>
+        <input id="nameB" type="text" maxlength="20" placeholder="npr. Punce" value="Punce">
+      </div>
+    </div>
+    <button class="btn-start-teams" onclick="startTeam()">⚓ Začni igro!</button>
+  </div>
+</div>
+
+<!-- ═══════════════════ GAME SCREEN ═══════════════════ -->
+<div id="gameScreen">
+
+  <div class="top-bar">
+    <div class="game-title">🚢 POTAPLJANJE LADJIC</div>
+    <button class="btn btn-menu" onclick="goMenu()">← Meni</button>
+  </div>
+
+  <!-- BOARDS -->
+  <div class="boards-area" id="boardsArea">
+    <!-- filled by JS -->
+  </div>
+
+  <!-- legend -->
+  <div style="display:flex;gap:20px;font-size:.78rem;font-weight:700;color:var(--muted);flex-wrap:wrap;justify-content:center;">
+    <span>⬛ Neodkrito</span>
+    <span style="color:var(--miss)">🟦 Zgrešeno (morje)</span>
+    <span style="color:#c0392b">🔴 Zadetek</span>
+    <span style="color:#ff4d4d">💥 Potopljeno</span>
+  </div>
+
+</div>
+
+<!-- TOAST -->
+<div id="toast"></div>
+
+<!-- WIN OVERLAY -->
+<div id="winOverlay">
+  <div class="win-emoji">🏆</div>
+  <div class="win-title" id="winTitle">BRAVO!</div>
+  <div class="win-sub" id="winSub"></div>
+  <button class="btn btn-new" style="margin-top:16px;padding:14px 32px;" onclick="goMenu()">🔄 Nazaj v meni</button>
+</div>
+
+<script>
+const COLS  = ['A','B','C','D','E','F','G','H','I','J'];
+const ROWS  = Array.from({length:10},(_,i)=>i+1);
+const SHIP_DEFS = [
+  [4,'Bojna ladja','🛳️'],
+  [3,'Podmornica','🔱'],
+  [3,'Rušilec','⚓'],
+  [2,'Patrulja','🚤'],
+];
+
+let gameMode = 'solo'; // 'solo' | 'team'
+let games = [];        // array of game-state objects (1 for solo, 2 for team)
+
+/* ══════ AUDIO ENGINE ══════ */
+let audioCtx = null;
+
+function getCtx(){
+  if(!audioCtx) audioCtx = new (window.AudioContext||window.webkitAudioContext)();
+  if(audioCtx.state==='suspended') audioCtx.resume();
+  return audioCtx;
+}
+
+// 🌊 MISS — ČOFS: realistic water entry splash
+function playMiss(){
+  const ctx = getCtx();
+  const t = ctx.currentTime;
+
+  // 1. The "ČOFS" impact tone — fat bubble glug that drops fast
+  //    Mimics the low hollow "plop" of something hitting water
+  const plop = ctx.createOscillator();
+  plop.type = 'sine';
+  plop.frequency.setValueAtTime(280, t);
+  plop.frequency.exponentialRampToValueAtTime(55, t + 0.18);
+  const plopG = ctx.createGain();
+  plopG.gain.setValueAtTime(0, t);
+  plopG.gain.linearRampToValueAtTime(1.0, t + 0.012); // sharp attack
+  plopG.gain.exponentialRampToValueAtTime(0.001, t + 0.22);
+  plop.connect(plopG); plopG.connect(ctx.destination);
+  plop.start(t); plop.stop(t + 0.25);
+
+  // 2. Second harmonic "body" — thicker splash body
+  const plop2 = ctx.createOscillator();
+  plop2.type = 'sine';
+  plop2.frequency.setValueAtTime(140, t);
+  plop2.frequency.exponentialRampToValueAtTime(38, t + 0.22);
+  const plop2G = ctx.createGain();
+  plop2G.gain.setValueAtTime(0.6, t + 0.005);
+  plop2G.gain.exponentialRampToValueAtTime(0.001, t + 0.25);
+  plop2.connect(plop2G); plop2G.connect(ctx.destination);
+  plop2.start(t + 0.005); plop2.stop(t + 0.28);
+
+  // 3. Splash spray — white noise burst, shaped like flying droplets
+  //    Short, bright, dies fast
+  const sprayLen = Math.floor(ctx.sampleRate * 0.35);
+  const sprayBuf = ctx.createBuffer(1, sprayLen, ctx.sampleRate);
+  const sprayData = sprayBuf.getChannelData(0);
+  for(let i = 0; i < sprayLen; i++) sprayData[i] = (Math.random() * 2 - 1);
+
+  const spraySrc = ctx.createBufferSource();
+  spraySrc.buffer = sprayBuf;
+
+  // Band-pass around 2–4kHz = the "hissy" spray sound
+  const bp = ctx.createBiquadFilter();
+  bp.type = 'bandpass';
+  bp.frequency.value = 2800;
+  bp.Q.value = 0.6;
+
+  const sprayG = ctx.createGain();
+  sprayG.gain.setValueAtTime(0, t + 0.01);
+  sprayG.gain.linearRampToValueAtTime(0.38, t + 0.03);
+  sprayG.gain.exponentialRampToValueAtTime(0.001, t + 0.32);
+
+  spraySrc.connect(bp); bp.connect(sprayG); sprayG.connect(ctx.destination);
+  spraySrc.start(t + 0.01); spraySrc.stop(t + 0.36);
+
+  // 4. Gurgling bubbles after impact — 3 small glug pops
+  [0.19, 0.30, 0.40].forEach((delay, i) => {
+    const b = ctx.createOscillator();
+    b.type = 'sine';
+    const baseFreq = 320 - i * 40;
+    b.frequency.setValueAtTime(baseFreq, t + delay);
+    b.frequency.exponentialRampToValueAtTime(baseFreq * 0.4, t + delay + 0.07);
+    const bg = ctx.createGain();
+    bg.gain.setValueAtTime(0.18 - i * 0.04, t + delay);
+    bg.gain.exponentialRampToValueAtTime(0.001, t + delay + 0.09);
+    b.connect(bg); bg.connect(ctx.destination);
+    b.start(t + delay); b.stop(t + delay + 0.1);
+  });
+}
+
+// 💥 HIT — sharp explosion: noise burst + low thud
+function playHit(){
+  const ctx = getCtx();
+  const t = ctx.currentTime;
+
+  // noise burst
+  const bufLen = ctx.sampleRate * 0.7;
+  const buf = ctx.createBuffer(1, bufLen, ctx.sampleRate);
+  const data = buf.getChannelData(0);
+  for(let i=0;i<bufLen;i++) data[i]=(Math.random()*2-1);
+
+  const src = ctx.createBufferSource();
+  src.buffer = buf;
+
+  // band-pass for crackling texture
+  const bp = ctx.createBiquadFilter();
+  bp.type = 'bandpass';
+  bp.frequency.value = 800;
+  bp.Q.value = 0.5;
+
+  const gain = ctx.createGain();
+  gain.gain.setValueAtTime(0, t);
+  gain.gain.linearRampToValueAtTime(1.1, t+0.01);
+  gain.gain.exponentialRampToValueAtTime(0.001, t+0.55);
+
+  src.connect(bp); bp.connect(gain); gain.connect(ctx.destination);
+  src.start(t); src.stop(t+0.6);
+
+  // deep BOOM
+  const boom = ctx.createOscillator();
+  boom.type = 'sine';
+  boom.frequency.setValueAtTime(90, t);
+  boom.frequency.exponentialRampToValueAtTime(28, t+0.4);
+  const bg = ctx.createGain();
+  bg.gain.setValueAtTime(0.9, t);
+  bg.gain.exponentialRampToValueAtTime(0.001, t+0.45);
+  boom.connect(bg); bg.connect(ctx.destination);
+  boom.start(t); boom.stop(t+0.5);
+
+  // high crack snap
+  const snap = ctx.createOscillator();
+  snap.type = 'sawtooth';
+  snap.frequency.setValueAtTime(320, t);
+  snap.frequency.exponentialRampToValueAtTime(80, t+0.12);
+  const sg = ctx.createGain();
+  sg.gain.setValueAtTime(0.4, t);
+  sg.gain.exponentialRampToValueAtTime(0.001, t+0.15);
+  snap.connect(sg); sg.connect(ctx.destination);
+  snap.start(t); snap.stop(t+0.15);
+}
+
+// 🏆 SUNK — dramatic fanfare: descending boom + metal clang
+function playSunk(){
+  const ctx = getCtx();
+  const t = ctx.currentTime;
+
+  // bigger explosion first
+  playHit();
+
+  // metallic clang — two detuned sine waves with ring-mod feel
+  [[440,0.12],[554,0.09],[330,0.07]].forEach(([freq,delay])=>{
+    const o = ctx.createOscillator();
+    o.type = 'sine';
+    o.frequency.setValueAtTime(freq, t+delay);
+    o.frequency.exponentialRampToValueAtTime(freq*0.5, t+delay+0.6);
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.25, t+delay);
+    g.gain.exponentialRampToValueAtTime(0.001, t+delay+0.7);
+    o.connect(g); g.connect(ctx.destination);
+    o.start(t+delay); o.stop(t+delay+0.75);
+  });
+}
+
+/* ══════ BOARD STATE ══════ */
+function createBoardState(teamId, teamName, teamClass) {
+  const board = Array.from({length:10}, ()=>Array(10).fill(null));
+  const ships = [];
+  SHIP_DEFS.forEach(([size,name,emoji],id)=>{
+    const cells = placeShip(board, id, size);
+    ships.push({id,name,emoji,size,cells,sunk:false});
+  });
+  return {teamId, teamName, teamClass, board, ships, hits:0, misses:0, sunken:0};
+}
+
+function placeShip(board, id, size) {
+  let tries=0;
+  while(tries++<1000){
+    const horiz=Math.random()<.5, r=Math.floor(Math.random()*10), c=Math.floor(Math.random()*10);
+    if(canPlace(board,r,c,size,horiz)){
+      const cells=[];
+      for(let i=0;i<size;i++){
+        const rr=horiz?r:r+i, cc=horiz?c+i:c;
+        board[rr][cc]={ship:id,hit:false};
+        cells.push([rr,cc]);
+      }
+      return cells;
+    }
+  }
+  return [];
+}
+
+function canPlace(board,r,c,size,horiz){
+  for(let i=0;i<size;i++){
+    const rr=horiz?r:r+i, cc=horiz?c+i:c;
+    if(rr<0||rr>=10||cc<0||cc>=10) return false;
+    for(let dr=-1;dr<=1;dr++) for(let dc=-1;dc<=1;dc++){
+      const nr=rr+dr,nc=cc+dc;
+      if(nr>=0&&nr<10&&nc>=0&&nc<10&&board[nr][nc]) return false;
+    }
+  }
+  return true;
+}
+
+/* ══════ MODES ══════ */
+function startSolo(){
+  gameMode='solo';
+  games=[createBoardState(0,'','')];
+  renderGame();
+}
+
+function openTeamModal(){
+  document.getElementById('teamModal').classList.add('show');
+}
+
+function startTeam(){
+  const nameA=document.getElementById('nameA').value.trim()||'Ekipa A';
+  const nameB=document.getElementById('nameB').value.trim()||'Ekipa B';
+  document.getElementById('teamModal').classList.remove('show');
+  gameMode='team';
+  games=[
+    createBoardState(0, nameA, 'team-a'),
+    createBoardState(1, nameB, 'team-b'),
+  ];
+  renderGame();
+}
+
+function goMenu(){
+  document.getElementById('winOverlay').classList.remove('show');
+  document.getElementById('gameScreen').classList.remove('show');
+  document.getElementById('modeScreen').style.display='flex';
+}
+
+/* ══════ RENDER GAME ══════ */
+function renderGame(){
+  document.getElementById('modeScreen').style.display='none';
+  const gs=document.getElementById('gameScreen');
+  gs.classList.add('show');
+
+  const area=document.getElementById('boardsArea');
+  area.innerHTML='';
+  area.className='boards-area'+(gameMode==='solo'?' solo':'');
+
+  games.forEach((g,idx)=>{
+    if(gameMode==='team'&&idx===1){
+      const vs=document.createElement('div');
+      vs.className='vs-divider';
+      vs.innerHTML='<div class="vs-line"></div>VS<div class="vs-line"></div>';
+      area.appendChild(vs);
+    }
+    area.appendChild(buildBoardPanel(g));
+  });
+}
+
+function buildBoardPanel(g){
+  const panel=document.createElement('div');
+  panel.className='board-panel'+(g.teamClass?' '+g.teamClass:'');
+  panel.id=`panel-${g.teamId}`;
+
+  if(gameMode==='team'){
+    const header=document.createElement('div');
+    header.className='team-header';
+    header.innerHTML=`
+      <div class="team-name-label">${gameMode==='team'?(g.teamId===0?'🔵':'🩷'):''} ${g.teamName}</div>
+      <div class="team-stats">
+        <div class="stat-chip">💥 <span id="hits-${g.teamId}">0</span></div>
+        <div class="stat-chip">🌊 <span id="miss-${g.teamId}">0</span></div>
+        <div class="stat-chip">⚓ <span id="sunk-${g.teamId}">0</span>/4</div>
+      </div>`;
+    panel.appendChild(header);
+  }
+
+  // ship badges
+  const badges=document.createElement('div');
+  badges.className='ship-badges';
+  badges.id=`badges-${g.teamId}`;
+  renderBadges(g, badges);
+  panel.appendChild(badges);
+
+  // grid
+  const wrapper=document.createElement('div');
+  wrapper.className='grid-wrapper';
+  const gridEl=document.createElement('div');
+  gridEl.className='grid-outer';
+  gridEl.id=`grid-${g.teamId}`;
+  buildGrid(gridEl, g);
+  wrapper.appendChild(gridEl);
+  panel.appendChild(wrapper);
+
+  // controls
+  const ctrl=document.createElement('div');
+  ctrl.className='board-controls';
+  ctrl.innerHTML=`
+    <button class="btn btn-new" onclick="resetBoard(${g.teamId})">🔄 Nova razporeditev</button>
+    <button class="btn btn-reveal-all" onclick="revealAll(${g.teamId})">⚓ Razkrij</button>`;
+  panel.appendChild(ctrl);
+
+  // solo stats
+  if(gameMode==='solo'){
+    const ss=document.createElement('div');
+    ss.style.cssText='display:flex;gap:14px;flex-wrap:wrap;justify-content:center;';
+    ss.innerHTML=`
+      <div class="stat-chip">💥 Zadetki: <span id="hits-0">0</span></div>
+      <div class="stat-chip">🌊 Zgrešeni: <span id="miss-0">0</span></div>
+      <div class="stat-chip">⚓ Potopljeni: <span id="sunk-0">0</span>/4</div>`;
+    panel.appendChild(ss);
+  }
+
+  return panel;
+}
+
+function buildGrid(gridEl, g){
+  gridEl.innerHTML='';
+  // corner
+  const corner=document.createElement('div');
+  corner.className='label-corner';
+  gridEl.appendChild(corner);
+  // col labels
+  COLS.forEach(c=>{
+    const l=document.createElement('div');
+    l.className='col-label';l.textContent=c;
+    gridEl.appendChild(l);
+  });
+  // rows
+  ROWS.forEach((rowNum,ri)=>{
+    const rl=document.createElement('div');
+    rl.className='row-label';rl.textContent=rowNum;
+    gridEl.appendChild(rl);
+    COLS.forEach((_,ci)=>{
+      const cell=document.createElement('div');
+      cell.className='cell';
+      cell.id=`c-${g.teamId}-${ri}-${ci}`;
+      cell.title=`${COLS[ci]}${rowNum}`;
+      cell.onclick=()=>revealCell(g,ri,ci);
+      gridEl.appendChild(cell);
+    });
+  });
+}
+
+function renderBadges(g, el){
+  if(!el) el=document.getElementById(`badges-${g.teamId}`);
+  if(!el) return;
+  el.innerHTML=g.ships.map(s=>
+    `<div class="ship-badge${s.sunk?' sunk':''}">${s.emoji} ${s.name} (${s.size})${s.sunk?' 💀':''}</div>`
+  ).join('');
+}
+
+/* ══════ GAME LOGIC ══════ */
+function revealCell(g,r,c){
+  const cell=document.getElementById(`c-${g.teamId}-${r}-${c}`);
+  if(!cell||cell.classList.contains('revealed')) return;
+  cell.classList.add('revealed');
+
+  const data=g.board[r][c];
+  const coord=`${COLS[c]}${r+1}`;
+  const prefix=gameMode==='team'?`[${g.teamName}] `:'';
+
+  if(data){
+    data.hit=true;
+    cell.classList.add('hit');
+    g.hits++;
+
+    const ship=g.ships[data.ship];
+    const allHit=ship.cells.every(([sr,sc])=>g.board[sr][sc].hit);
+
+    if(allHit&&!ship.sunk){
+      ship.sunk=true; g.sunken++;
+      ship.cells.forEach(([sr,sc])=>{
+        const sc2=document.getElementById(`c-${g.teamId}-${sr}-${sc}`);
+        sc2.classList.add('sunk-cell');
+        sc2.innerHTML=`<span class="hit-icon">💥</span>`;
+      });
+      playSunk();
+      renderBadges(g);
+      showToast(`${prefix}${ship.emoji} ${ship.name} — POTOPLJENA! 💥`);
+      if(g.sunken===g.ships.length) checkWin(g);
+    } else {
+      playHit();
+      cell.innerHTML=`<span class="hit-icon">🔥</span>`;
+      showToast(`${prefix}🎯 ZADETEK! ${coord}`);
+    }
+  } else {
+    playMiss();
+    cell.classList.add('miss');
+    g.misses++;
+    showToast(`${prefix}🌊 Zgrešeno — ${coord}`);
+  }
+  updateStats(g);
+}
+
+function updateStats(g){
+  const h=document.getElementById(`hits-${g.teamId}`);
+  const m=document.getElementById(`miss-${g.teamId}`);
+  const s=document.getElementById(`sunk-${g.teamId}`);
+  if(h) h.textContent=g.hits;
+  if(m) m.textContent=g.misses;
+  if(s) s.textContent=g.sunken;
+}
+
+function revealAll(teamId){
+  const g=games[teamId];
+  g.ships.forEach(ship=>{
+    ship.cells.forEach(([r,c])=>{
+      const cell=document.getElementById(`c-${g.teamId}-${r}-${c}`);
+      if(!cell.classList.contains('revealed')){
+        cell.classList.add('revealed','hit');
+        cell.innerHTML=`<span class="hit-icon">${ship.emoji}</span>`;
+      }
+    });
+  });
+}
+
+function resetBoard(teamId){
+  const g=games[teamId];
+  const oldName=g.teamName, oldClass=g.teamClass;
+  games[teamId]=createBoardState(teamId, oldName, oldClass);
+  const panel=document.getElementById(`panel-${teamId}`);
+  const area=document.getElementById('boardsArea');
+  const newPanel=buildBoardPanel(games[teamId]);
+  // rebuild whole area (simpler than patching)
+  renderGame();
+  // hide win overlay if open
+  document.getElementById('winOverlay').classList.remove('show');
+}
+
+function checkWin(g){
+  const overlay=document.getElementById('winOverlay');
+  const title=document.getElementById('winTitle');
+  const sub=document.getElementById('winSub');
+
+  if(gameMode==='solo'){
+    title.textContent='BRAVO! 🎉';
+    sub.textContent=`Vse ladjice potopljene v ${g.hits+g.misses} poskusih!`;
+  } else {
+    title.textContent=`${g.teamName} ZMAGA! 🏆`;
+    sub.textContent=`Vse ladjice potopljene v ${g.hits+g.misses} poskusih · ${g.hits} zadetkov`;
+  }
+  setTimeout(()=>overlay.classList.add('show'), 800);
+}
+
+/* ══════ TOAST ══════ */
+let toastTimer;
+function showToast(msg){
+  const t=document.getElementById('toast');
+  t.textContent=msg; t.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer=setTimeout(()=>t.classList.remove('show'),2400);
+}
+</script>
+</body>
+</html>
