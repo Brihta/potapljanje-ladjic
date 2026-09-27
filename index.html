@@ -6,7 +6,7 @@
 <title>🚢 Potapljanje ladjic 2.0</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Lilita+One&family=Nunito:wght@600;700;800;900&display=swap" rel="stylesheet">
-<script defer src="https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/mqtt@5.10.1/dist/mqtt.min.js"></script>
 <style>
 :root{
   --bg1:#03202a;
@@ -524,7 +524,6 @@ const BOMBS = {
 const BOMB_KEYS = Object.keys(BOMBS);
 const EMOJIS = ['🦈','🐙','🐬','🐳','🦀','🐢','🐧','🏴‍☠️','⚓','🚀','🔥','⭐','⚡','🌈',
                 '🦄','🐉','🦁','🐯','🐸','🐼','🦊','🤖','👾','😎','🥷','👑','⚽','🏐'];
-const PEER_PREFIX = 'brihta-potapljanje-v2-';
 
 const $ = s => document.querySelector(s);
 const inB = (r,c) => r>=0 && r<N && c>=0 && c<N;
@@ -1078,8 +1077,17 @@ function guessWin(g){
   }
 }
 
-/* ══════════════════════ BATTLE — NETWORK ══════════════════════ */
-const net = {peer:null, conn:null, isHost:false, leaving:false, joinTimer:null};
+/* ══════════════════════ BATTLE — NETWORK ══════════════════════
+   The two computers talk through a free public MQTT server (no account needed).
+   The 4-digit code picks the server and names the "room" (topic) both players join.
+   The host leaves a retained note on <room>/host so a joining player can see the game exists. */
+const BROKERS = [
+  {url:'wss://broker.emqx.io:8084/mqtt',      lo:1000, hi:5999},
+  {url:'wss://test.mosquitto.org:8081/mqtt', lo:6000, hi:9999},
+];
+const ROOM = code => 'brihta/potapljanje-v2/' + code;
+const net = {client:null, code:null, id:null, partner:null, conn:null, isHost:false,
+             leaving:false, timer:null, seq:0, seen:new Set(), token:null};
 let me = {name:'', emoji:'⚓'};
 let enemy = {name:'Nasprotnik', emoji:'🏴‍☠️'};
 let enemyReady = false;
@@ -1105,71 +1113,140 @@ function readMe(){
   me = {name:$('#meName').value.trim() || 'Igralec 1', emoji:$('#meEmoji').textContent};
   store('pl2-me', me);
 }
-function peerAvailable(){
-  if(typeof Peer!=='undefined') return true;
+function mqttAvailable(){
+  if(typeof mqtt!=='undefined') return true;
   lobbyStatus('Knjižnica za povezavo se ni naložila — preveri internet in osveži stran.', true);
   return false;
 }
-function peerErrorText(e){
-  switch(e && e.type){
-    case 'peer-unavailable':     return 'Igre s to kodo ni. Preveri kodo in poskusi znova.';
-    case 'browser-incompatible': return 'Ta brskalnik ne podpira igre prek spleta.';
-    case 'network': case 'server-error': case 'socket-error': case 'socket-closed':
-                                 return 'Ni povezave s strežnikom. Preveri internet.';
-    default:                     return 'Napaka pri povezavi (' + (e && e.type || 'neznano') + ').';
-  }
-}
-function hostGame(){
-  if(!peerAvailable()) return;
-  readMe();
+function startNet(isHost){
   leaveNet();
   net.leaving = false;
-  net.isHost = true;
-  const code = String(Math.floor(1000 + Math.random()*9000));
-  lobbyStatus('Povezujem s strežnikom…');
-  const peer = net.peer = new Peer(PEER_PREFIX + code);
-  peer.on('open', () => {
-    $('#lobbyChoose').hidden = true;
-    $('#lobbyWait').hidden = false;
-    $('#codeShow').textContent = code;
-    lobbyStatus('');
-  });
-  peer.on('connection', c => {
-    if(net.conn){ c.on('open', () => { c.send({t:'full'}); setTimeout(() => c.close(), 400); }); return; }
-    setupConn(c);
-  });
-  peer.on('error', e => {
-    if(e.type==='unavailable-id'){ hostGame(); return; }
-    if(!net.conn) lobbyStatus(peerErrorText(e), true);
+  net.isHost = isHost;
+  net.id = Math.random().toString(36).slice(2, 10);
+  net.seq = 0;
+  net.seen = new Set();
+  return net.token = {};
+}
+function connectBroker(broker, code){
+  return new Promise((resolve, reject) => {
+    const c = mqtt.connect(broker.url, {
+      reconnectPeriod:2000, connectTimeout:8000, keepalive:15, clean:true,
+      will:{topic:ROOM(code)+'/msg', payload:JSON.stringify({t:'bye', from:net.id}), qos:1, retain:false},
+    });
+    const done = ok => { clearTimeout(timer); c.removeListener('connect', onConnect); c.removeListener('error', onError); ok ? resolve(c) : (c.end(true), reject()); };
+    const onConnect = () => done(true);
+    const onError = () => done(false);
+    const timer = setTimeout(() => done(false), 9000);
+    c.on('connect', onConnect);
+    c.on('error', onError);
   });
 }
-function joinGame(){
+/* Reads the retained "a game is hosted here" note, if any. */
+function readHostNote(c, code, ms){
+  const topic = ROOM(code) + '/host';
+  return new Promise(resolve => {
+    let note = null;
+    const h = (t, p) => { if(t===topic && p.length){ try{ note = JSON.parse(p.toString()); }catch(e){} } };
+    c.on('message', h);
+    c.subscribe(topic, {qos:1});
+    setTimeout(() => { c.removeListener('message', h); c.unsubscribe(topic); resolve(note); }, ms);
+  });
+}
+async function hostGame(){
+  if(!mqttAvailable()) return;
+  readMe();
+  const token = startNet(true);
+  lobbyStatus('Povezujem s strežnikom…');
+  for(const broker of BROKERS){
+    for(let attempt=0; attempt<4; attempt++){
+      const code = broker.lo + Math.floor(Math.random()*(broker.hi - broker.lo + 1));
+      let c;
+      try{ c = await connectBroker(broker, code); }catch(e){ break; }   // server unreachable → try the next one
+      if(net.token!==token){ c.end(true); return; }
+      const note = await readHostNote(c, code, 1200);
+      if(net.token!==token){ c.end(true); return; }
+      if(note && Date.now() - note.ts < 3*3600e3){ c.end(true); continue; }   // code in use → pick another
+      c.publish(ROOM(code)+'/host', JSON.stringify({from:net.id, ts:Date.now()}), {qos:1, retain:true});
+      attachClient(c, code);
+      $('#lobbyChoose').hidden = true;
+      $('#lobbyWait').hidden = false;
+      $('#codeShow').textContent = code;
+      lobbyStatus('');
+      return;
+    }
+  }
+  if(net.token===token) lobbyStatus('Ni povezave s strežnikom. Preveri internet.', true);
+}
+async function joinGame(){
   const code = $('#joinCode').value.trim();
   if(!/^\d{4}$/.test(code)){ lobbyStatus('Vpiši 4-mestno kodo.', true); return; }
-  if(!peerAvailable()) return;
+  if(!mqttAvailable()) return;
   readMe();
-  leaveNet();
-  net.leaving = false;
-  net.isHost = false;
+  const token = startNet(false);
+  const broker = BROKERS.find(b => +code>=b.lo && +code<=b.hi);
   lobbyStatus('Povezujem…');
-  const peer = net.peer = new Peer();
-  peer.on('open', () => setupConn(peer.connect(PEER_PREFIX + code, {reliable:true})));
-  peer.on('error', e => { if(!net.conn || !net.conn.open) lobbyStatus(peerErrorText(e), true); });
-  clearTimeout(net.joinTimer);
-  net.joinTimer = setTimeout(() => {
-    if(!net.conn || !net.conn.open) lobbyStatus('Povezava ne uspe. Preveri kodo — ali pa omrežje blokira povezavo.', true);
-  }, 12000);
+  let c;
+  try{ c = await connectBroker(broker, code); }
+  catch(e){ if(net.token===token) lobbyStatus('Ni povezave s strežnikom. Preveri internet.', true); return; }
+  if(net.token!==token){ c.end(true); return; }
+  const note = await readHostNote(c, code, 2000);
+  if(net.token!==token){ c.end(true); return; }
+  if(!note || !note.from){ c.end(true); lobbyStatus('Igre s to kodo ni. Preveri kodo in poskusi znova.', true); return; }
+  attachClient(c, code);
+  publish({t:'join', to:note.from});
+  net.timer = setTimeout(() => {
+    if(!net.partner) lobbyStatus('Igralec s to kodo se ne odziva. Naj ustvari novo igro.', true);
+  }, 8000);
 }
-function setupConn(c){
-  net.conn = c;
-  const onOpen = () => { clearTimeout(net.joinTimer); send({t:'hello', name:me.name, emoji:me.emoji}); };
-  if(c.open) onOpen(); else c.on('open', onOpen);
-  c.on('data', m => { if(net.conn===c) onMsg(m); });
-  c.on('close', () => { if(net.conn===c) onDisconnect(); });
-  c.on('error', () => { if(net.conn===c) onDisconnect(); });
+function attachClient(c, code){
+  net.client = c;
+  net.code = code;
+  const topic = ROOM(code) + '/msg';
+  c.subscribe(topic, {qos:1});
+  c.on('message', (t, payload) => {
+    if(t!==topic || c!==net.client) return;
+    let m;
+    try{ m = JSON.parse(payload.toString()); }catch(e){ return; }
+    if(!m || typeof m!=='object' || m.from===net.id) return;
+    const key = m.from + ':' + m.seq;
+    if(m.seq!=null){ if(net.seen.has(key)) return; net.seen.add(key); }
+    routeMsg(m);
+  });
+}
+function routeMsg(m){
+  if(m.t==='bye'){ if(m.from===net.partner) onDisconnect(); return; }
+  if(m.to && m.to!==net.id) return;
+  if(!net.partner){
+    if(net.isHost && m.t==='join'){
+      net.partner = m.from;
+      net.conn = true;
+      send({t:'hello', name:me.name, emoji:me.emoji});
+    } else if(!net.isHost && m.t==='hello'){
+      clearTimeout(net.timer);
+      net.partner = m.from;
+      net.conn = true;
+      send({t:'hello', name:me.name, emoji:me.emoji});
+      onMsg(m);
+    } else if(!net.isHost && m.t==='full'){
+      clearTimeout(net.timer);
+      onMsg(m);
+    }
+    return;
+  }
+  if(m.from!==net.partner){
+    if(net.isHost && m.t==='join') publish({t:'full', to:m.from});
+    return;
+  }
+  onMsg(m);
+}
+function publish(msg){
+  if(!net.client) return;
+  msg.from = net.id;
+  msg.seq = ++net.seq;
+  try{ net.client.publish(ROOM(net.code)+'/msg', JSON.stringify(msg), {qos:1}); }catch(e){}
 }
 function send(msg){
-  try{ if(net.conn && net.conn.open) net.conn.send(msg); }catch(e){}
+  if(net.partner) publish(Object.assign({to:net.partner}, msg));
 }
 function cancelLobby(){
   leaveNet();
@@ -1177,16 +1254,21 @@ function cancelLobby(){
 }
 function leaveNet(){
   net.leaving = true;
-  clearTimeout(net.joinTimer);
-  send({t:'bye'});
-  const {conn, peer} = net;
-  net.conn = null; net.peer = null;
-  setTimeout(() => { try{ conn && conn.close(); }catch(e){} try{ peer && peer.destroy(); }catch(e){} }, 150);
+  net.token = null;
+  clearTimeout(net.timer);
+  const c = net.client;
+  if(c){
+    if(net.partner) publish({t:'bye'});
+    if(net.isHost) try{ c.publish(ROOM(net.code)+'/host', '', {qos:1, retain:true}); }catch(e){}
+    setTimeout(() => { try{ c.end(false); }catch(e){} }, 300);
+  }
+  net.client = null; net.partner = null; net.conn = null;
   enemyReady = false;
 }
 function onDisconnect(){
   if(net.leaving || !net.conn) return;
   net.conn = null;
+  net.partner = null;
   if(mode!=='battle'){ lobbyStatus('Povezava je prekinjena.', true); resetLobbyUI(); return; }
   if(B && B.over){ toast(`${enemy.emoji} ${enemy.name} ni več v igri`); return; }
   showOverlay('📡', 'Povezava prekinjena', `${enemy.emoji} ${enemy.name} — povezava je izgubljena.`, [['🏠 Meni', goMenu]]);
