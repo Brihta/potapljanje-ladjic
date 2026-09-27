@@ -1306,7 +1306,7 @@ function onMsg(m){
     case 'fire':    incomingFire(m); break;
     case 'result':  incomingResult(m); break;
     case 'reveal':  incomingReveal(m); break;
-    case 'rematch': toast(`🔁 ${enemy.emoji} ${enemy.name} želi revanšo!`); break;
+    case 'rematch': toast(`🔁 ${enemy.emoji} ${enemy.name} želi novo igro!`); break;
     case 'bye':     onDisconnect(); break;
   }
 }
@@ -1491,7 +1491,7 @@ function updateBattle(){
   const banner = $('#turnBanner');
   if(B.over){
     banner.className = 'turn-banner';
-    banner.innerHTML = '🏁 Konec igre &nbsp;<button class="btn mint" id="rematchBtn">🔁 Revanša</button>';
+    banner.innerHTML = '🏁 Konec igre &nbsp;<button class="btn mint" id="rematchBtn">🔁 Nova igra</button>';
     $('#rematchBtn').onclick = rematch;
   }
   else if(B.myTurn){ banner.className = 'turn-banner mine'; banner.textContent = '🎯 Tvoja poteza — streljaj!'; }
@@ -1589,7 +1589,7 @@ function rematch(){
 }
 function battleEndButtons(){
   return [
-    ['🔁 Revanša', rematch, 'mint'],
+    ['🔁 Nova igra', rematch, 'mint'],
     ['👀 Poglej mreže', null],
     ['🏠 Meni', goMenu],
   ];
