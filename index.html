@@ -1189,14 +1189,21 @@ async function joinGame(){
   try{ c = await connectBroker(broker, code); }
   catch(e){ if(net.token===token) lobbyStatus('Ni povezave s strežnikom. Preveri internet.', true); return; }
   if(net.token!==token){ c.end(true); return; }
-  const note = await readHostNote(c, code, 2000);
-  if(net.token!==token){ c.end(true); return; }
-  if(!note || !note.from){ c.end(true); lobbyStatus('Igre s to kodo ni. Preveri kodo in poskusi znova.', true); return; }
+  /* Do not rely on the retained host note (public servers sometimes drop or delay it).
+     Ask the room directly, repeating the request until the host answers or we give up. */
   attachClient(c, code);
-  publish({t:'join', to:note.from});
-  net.timer = setTimeout(() => {
-    if(!net.partner) lobbyStatus('Igralec s to kodo se ne odziva. Naj ustvari novo igro.', true);
-  }, 8000);
+  lobbyStatus('Iščem igro ' + code + '…');
+  let tries = 0;
+  const ask = () => {
+    if(net.token!==token || net.partner) return;
+    if(tries++ >= 10){
+      lobbyStatus('Igre s kodo ' + code + ' ni našlo. Preveri kodo in ali je prijatelj še na zaslonu s kodo.', true);
+      return;
+    }
+    publish({t:'join'});
+    net.timer = setTimeout(ask, 1500);
+  };
+  ask();
 }
 function attachClient(c, code){
   net.client = c;
@@ -1235,6 +1242,10 @@ function routeMsg(m){
   }
   if(m.from!==net.partner){
     if(net.isHost && m.t==='join') publish({t:'full', to:m.from});
+    return;
+  }
+  if(net.isHost && m.t==='join'){   // guest missed our hello: say it again
+    send({t:'hello', name:me.name, emoji:me.emoji});
     return;
   }
   onMsg(m);
